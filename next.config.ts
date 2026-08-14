@@ -6,6 +6,8 @@ const nextConfig: NextConfig = {
   serverExternalPackages: [
     "onnxruntime-node",
     "@huggingface/transformers",
+    "pdf-parse",
+    "pdfjs-dist"
   ],
 };
 
