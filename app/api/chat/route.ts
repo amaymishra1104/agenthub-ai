@@ -1,7 +1,9 @@
 import Groq from "groq-sdk";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
+
 import { createClient } from "@/lib/supabase/server";
+import { generateEmbedding } from "@/lib/embeddings";
 
 export async function POST(request: Request) {
   try {
@@ -289,7 +291,134 @@ export async function POST(request: Request) {
     }
 
     // ------------------------------------------
-    // 10. Build Groq message history
+    // 10. Search knowledge base
+    // ------------------------------------------
+
+    let knowledgeContext = "";
+
+    try {
+      console.log(
+        "Generating knowledge query embedding..."
+      );
+
+      const queryEmbedding =
+        await generateEmbedding(
+          trimmedMessage
+        );
+
+      console.log(
+        "Query embedding dimensions:",
+        queryEmbedding.length
+      );
+
+      if (
+        queryEmbedding.length !== 384
+      ) {
+        throw new Error(
+          `Expected 384 dimensions but received ${queryEmbedding.length}.`
+        );
+      }
+
+      console.log(
+        "Searching knowledge base..."
+      );
+
+      const {
+        data: knowledgeMatches,
+        error: knowledgeSearchError,
+      } = await supabase.rpc(
+        "match_knowledge_chunks",
+        {
+          query_embedding:
+            queryEmbedding,
+          match_project_id:
+            project.id,
+          match_count: 5,
+        }
+      );
+
+      if (knowledgeSearchError) {
+        throw new Error(
+          knowledgeSearchError.message
+        );
+      }
+
+      const matches =
+        Array.isArray(knowledgeMatches)
+          ? knowledgeMatches
+          : [];
+
+      console.log(
+        "Knowledge matches found:",
+        matches.length
+      );
+
+      // ----------------------------------------
+      // Similarity threshold
+      // ----------------------------------------
+
+      const relevantMatches =
+        matches.filter(
+          (match: {
+            similarity?: number;
+            content?: string;
+          }) =>
+            typeof match.similarity ===
+              "number" &&
+            match.similarity >= 0.70 &&
+            typeof match.content ===
+              "string" &&
+            match.content.trim()
+        );
+
+      console.log(
+        "Relevant knowledge matches:",
+        relevantMatches.length
+      );
+
+      if (
+        relevantMatches.length > 0
+      ) {
+        knowledgeContext =
+          relevantMatches
+            .map(
+              (
+                match: {
+                  content: string;
+                  similarity: number;
+                },
+                index: number
+              ) =>
+                `[Knowledge Source ${
+                  index + 1
+                } | similarity: ${match.similarity.toFixed(
+                  3
+                )}]\n${match.content}`
+            )
+            .join("\n\n");
+      }
+    } catch (knowledgeError) {
+      // ----------------------------------------
+      // Knowledge search failure
+      // ----------------------------------------
+      //
+      // We don't want a temporary vector-search
+      // problem to completely destroy the existing
+      // chatbot functionality.
+      //
+      // Groq can still answer using the system
+      // prompt and conversation history.
+
+      console.error(
+        "Knowledge search failed:",
+        knowledgeError
+      );
+
+      knowledgeContext = "";
+    }
+
+    // ------------------------------------------
+    // 11. Build Groq message history
     // ------------------------------------------
 
     const historyForGroq =
@@ -303,13 +432,50 @@ export async function POST(request: Request) {
         })
       );
 
+    // ------------------------------------------
+    // 12. Build RAG-aware system prompt
+    // ------------------------------------------
+
+    let ragSystemPrompt =
+      systemPrompt;
+
+    if (knowledgeContext) {
+      ragSystemPrompt = `${systemPrompt}
+
+IMPORTANT KNOWLEDGE-BASE INSTRUCTIONS:
+
+You have access to the following knowledge retrieved from this agent's knowledge base.
+
+Use this information when it is relevant to the user's question.
+
+Do not invent facts that are not supported by the knowledge base.
+
+If the knowledge base contains the answer, prefer the knowledge-base information over unsupported assumptions.
+
+If the knowledge base does not contain enough information to answer a question, be honest about that rather than making up a specific policy, price, date, or fact.
+
+KNOWLEDGE BASE CONTEXT:
+
+${knowledgeContext}`;
+    } else {
+      ragSystemPrompt = `${systemPrompt}
+
+IMPORTANT:
+
+No sufficiently relevant knowledge-base information was found for the current user question.
+
+Do not pretend that the knowledge base contains an answer when it does not.
+
+If you cannot answer confidently from your instructions and conversation context, say so honestly.`;
+    }
+
     historyForGroq.push({
       role: "user",
       content: trimmedMessage,
     });
 
     // ------------------------------------------
-    // 11. Start Groq streaming
+    // 13. Start Groq streaming
     // ------------------------------------------
 
     console.log(
@@ -326,6 +492,11 @@ export async function POST(request: Request) {
       conversationId
     );
 
+    console.log(
+      "RAG context available:",
+      Boolean(knowledgeContext)
+    );
+
     const stream =
       await groq.chat.completions.create({
         model: "llama-3.1-8b-instant",
@@ -333,7 +504,7 @@ export async function POST(request: Request) {
         messages: [
           {
             role: "system",
-            content: systemPrompt,
+            content: ragSystemPrompt,
           },
           ...historyForGroq,
         ],
@@ -345,7 +516,7 @@ export async function POST(request: Request) {
       });
 
     // ------------------------------------------
-    // 12. Create readable stream
+    // 14. Create readable stream
     // ------------------------------------------
 
     const encoder =
@@ -357,8 +528,10 @@ export async function POST(request: Request) {
       new ReadableStream({
         async start(controller) {
           try {
-            // First send the saved user message
-            // to the client.
+            // ------------------------------------
+            // Send saved user message
+            // ------------------------------------
+
             controller.enqueue(
               encoder.encode(
                 JSON.stringify({
@@ -397,7 +570,7 @@ export async function POST(request: Request) {
             }
 
             // ------------------------------------
-            // 13. Save complete assistant response
+            // Save complete assistant response
             // ------------------------------------
 
             if (!fullResponse.trim()) {
@@ -448,7 +621,7 @@ export async function POST(request: Request) {
             }
 
             // ------------------------------------
-            // 14. Update conversation timestamp
+            // Update conversation timestamp
             // ------------------------------------
 
             await supabase
@@ -463,7 +636,7 @@ export async function POST(request: Request) {
               );
 
             // ------------------------------------
-            // 15. Tell client stream is complete
+            // Tell client stream is complete
             // ------------------------------------
 
             controller.enqueue(
@@ -508,7 +681,7 @@ export async function POST(request: Request) {
       });
 
     // ------------------------------------------
-    // 16. Return streaming response
+    // 15. Return streaming response
     // ------------------------------------------
 
     return new Response(
