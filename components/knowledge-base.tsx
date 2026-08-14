@@ -30,6 +30,9 @@ export default function KnowledgeBase({
   const [uploading, setUploading] =
     useState(false);
 
+  const [processingDocumentId, setProcessingDocumentId] =
+    useState<string | null>(null);
+
   const [embeddingDocumentId, setEmbeddingDocumentId] =
     useState<string | null>(null);
 
@@ -45,9 +48,9 @@ export default function KnowledgeBase({
   const [error, setError] =
     useState("");
 
-  // ==========================================
-  // LOAD EXISTING DOCUMENTS
-  // ==========================================
+  // =========================================================
+  // LOAD DOCUMENTS
+  // =========================================================
 
   async function loadDocuments() {
     try {
@@ -63,7 +66,8 @@ export default function KnowledgeBase({
         }
       );
 
-      const text = await response.text();
+      const text =
+        await response.text();
 
       if (!response.ok) {
         console.error(
@@ -119,17 +123,17 @@ export default function KnowledgeBase({
     }
   }
 
-  // ==========================================
+  // =========================================================
   // LOAD DOCUMENTS WHEN AGENT CHANGES
-  // ==========================================
+  // =========================================================
 
   useEffect(() => {
     loadDocuments();
   }, [agentId]);
 
-  // ==========================================
+  // =========================================================
   // UPLOAD DOCUMENT
-  // ==========================================
+  // =========================================================
 
   async function handleFileChange(
     event: ChangeEvent<HTMLInputElement>
@@ -144,9 +148,9 @@ export default function KnowledgeBase({
     setError("");
     setMessage("");
 
-    // ========================================
+    // -------------------------------------------------------
     // VALIDATE FILE TYPE
-    // ========================================
+    // -------------------------------------------------------
 
     const allowedTypes = [
       "application/pdf",
@@ -185,9 +189,9 @@ export default function KnowledgeBase({
       return;
     }
 
-    // ========================================
+    // -------------------------------------------------------
     // VALIDATE FILE SIZE
-    // ========================================
+    // -------------------------------------------------------
 
     const maxSize =
       10 * 1024 * 1024;
@@ -209,9 +213,9 @@ export default function KnowledgeBase({
         "Uploading document..."
       );
 
-      // ======================================
-      // STEP 1 — UPLOAD FILE
-      // ======================================
+      // =====================================================
+      // STEP 1 — UPLOAD
+      // =====================================================
 
       const formData =
         new FormData();
@@ -277,9 +281,9 @@ export default function KnowledgeBase({
       const uploadedDocument =
         uploadData.document;
 
-      // ======================================
+      // =====================================================
       // ADD DOCUMENT TO UI
-      // ======================================
+      // =====================================================
 
       setDocuments(
         (current) => [
@@ -297,9 +301,9 @@ export default function KnowledgeBase({
         ]
       );
 
-      // ======================================
+      // =====================================================
       // STEP 2 — PROCESS DOCUMENT
-      // ======================================
+      // =====================================================
 
       setMessage(
         "Upload complete. Processing document..."
@@ -356,6 +360,12 @@ export default function KnowledgeBase({
           ? processData.chunkCount
           : 0;
 
+      if (chunkCount === 0) {
+        throw new Error(
+          "Document processing completed but no knowledge chunks were created."
+        );
+      }
+
       setDocuments(
         (current) =>
           current.map(
@@ -374,16 +384,16 @@ export default function KnowledgeBase({
       );
 
       setMessage(
-        `Document processed successfully. Created ${chunkCount} knowledge ${
+        `Document processed successfully. Created ${chunkCount} ${
           chunkCount === 1
-            ? "chunk"
-            : "chunks"
-        }. Generate embeddings to enable semantic search.`
+            ? "knowledge chunk"
+            : "knowledge chunks"
+        }. You can now generate embeddings.`
       );
 
-      // ======================================
+      // -------------------------------------------------------
       // RESET FILE INPUT
-      // ======================================
+      // -------------------------------------------------------
 
       if (
         fileInputRef.current
@@ -409,22 +419,141 @@ export default function KnowledgeBase({
     }
   }
 
-  // ==========================================
+  // =========================================================
+  // PROCESS EXISTING DOCUMENT
+  // =========================================================
+
+  async function handleProcessDocument(
+    documentId: string
+  ) {
+    try {
+      setError("");
+      setMessage("");
+
+      setProcessingDocumentId(
+        documentId
+      );
+
+      setMessage(
+        "Processing document and creating knowledge chunks..."
+      );
+
+      const response =
+        await fetch(
+          "/api/knowledge/process",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              documentId,
+            }),
+          }
+        );
+
+      const text =
+        await response.text();
+
+      let data: {
+        chunkCount?: number;
+        error?: string;
+      };
+
+      try {
+        data = JSON.parse(text);
+      } catch {
+        console.error(
+          "Process API returned invalid response:",
+          text
+        );
+
+        throw new Error(
+          "The document processing API returned an invalid response."
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            `Document processing failed with status ${response.status}.`
+        );
+      }
+
+      const chunkCount =
+        typeof data.chunkCount ===
+        "number"
+          ? data.chunkCount
+          : 0;
+
+      if (chunkCount === 0) {
+        throw new Error(
+          "Document was processed but no knowledge chunks were created."
+        );
+      }
+
+      setDocuments(
+        (current) =>
+          current.map(
+            (document) =>
+              document.id ===
+              documentId
+                ? {
+                    ...document,
+                    embedded: false,
+                    chunk_count:
+                      chunkCount,
+                    embedded_chunk_count: 0,
+                  }
+                : document
+          )
+      );
+
+      setMessage(
+        `Document processed successfully. Created ${chunkCount} ${
+          chunkCount === 1
+            ? "knowledge chunk"
+            : "knowledge chunks"
+        }. You can now generate embeddings.`
+      );
+    } catch (error) {
+      console.error(
+        "Document processing error:",
+        error
+      );
+
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while processing the document."
+      );
+
+      setMessage("");
+    } finally {
+      setProcessingDocumentId(
+        null
+      );
+    }
+  }
+
+  // =========================================================
   // GENERATE EMBEDDINGS
-  // ==========================================
+  // =========================================================
 
   async function handleGenerateEmbeddings(
     documentId: string
   ) {
     try {
       setError("");
-
-      setMessage(
-        "Generating embeddings... The first run may take a little longer while the embedding model loads."
-      );
+      setMessage("");
 
       setEmbeddingDocumentId(
         documentId
+      );
+
+      setMessage(
+        "Generating embeddings... The first run may take a little longer while the embedding model loads."
       );
 
       const response =
@@ -476,6 +605,12 @@ export default function KnowledgeBase({
           ? data.embeddedCount
           : 0;
 
+      if (embeddedCount === 0) {
+        throw new Error(
+          "Embedding generation completed but no embeddings were created."
+        );
+      }
+
       setDocuments(
         (current) =>
           current.map(
@@ -519,9 +654,9 @@ export default function KnowledgeBase({
     }
   }
 
-  // ==========================================
+  // =========================================================
   // DELETE DOCUMENT
-  // ==========================================
+  // =========================================================
 
   async function handleDeleteDocument(
     document: UploadedDocument
@@ -579,7 +714,6 @@ export default function KnowledgeBase({
         );
       }
 
-      // Remove from UI immediately
       setDocuments(
         (current) =>
           current.filter(
@@ -610,15 +744,16 @@ export default function KnowledgeBase({
     }
   }
 
-  // ==========================================
+  // =========================================================
   // OPEN FILE PICKER
-  // ==========================================
+  // =========================================================
 
   function openFilePicker() {
     if (
       uploading ||
-      deletingDocumentId !==
-        null
+      processingDocumentId !== null ||
+      embeddingDocumentId !== null ||
+      deletingDocumentId !== null
     ) {
       return;
     }
@@ -626,9 +761,9 @@ export default function KnowledgeBase({
     fileInputRef.current?.click();
   }
 
-  // ==========================================
-  // FORMAT FILE TYPE
-  // ==========================================
+  // =========================================================
+  // FILE TYPE LABEL
+  // =========================================================
 
   function getFileTypeLabel(
     fileType: string | null
@@ -658,15 +793,15 @@ export default function KnowledgeBase({
     return fileType;
   }
 
-  // ==========================================
+  // =========================================================
   // UI
-  // ==========================================
+  // =========================================================
 
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-      {/* ====================================== */}
-      {/* HEADER */}
-      {/* ====================================== */}
+      {/* =====================================================
+          HEADER
+      ===================================================== */}
 
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -691,9 +826,9 @@ export default function KnowledgeBase({
         )}
       </div>
 
-      {/* ====================================== */}
-      {/* UPLOAD AREA */}
-      {/* ====================================== */}
+      {/* =====================================================
+          UPLOAD AREA
+      ===================================================== */}
 
       <div className="mt-6">
         <button
@@ -703,6 +838,8 @@ export default function KnowledgeBase({
           }
           disabled={
             uploading ||
+            processingDocumentId !==
+              null ||
             embeddingDocumentId !==
               null ||
             deletingDocumentId !==
@@ -737,6 +874,8 @@ export default function KnowledgeBase({
           }
           disabled={
             uploading ||
+            processingDocumentId !==
+              null ||
             embeddingDocumentId !==
               null ||
             deletingDocumentId !==
@@ -746,9 +885,9 @@ export default function KnowledgeBase({
         />
       </div>
 
-      {/* ====================================== */}
-      {/* SUCCESS MESSAGE */}
-      {/* ====================================== */}
+      {/* =====================================================
+          SUCCESS MESSAGE
+      ===================================================== */}
 
       {message && (
         <div className="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
@@ -756,9 +895,9 @@ export default function KnowledgeBase({
         </div>
       )}
 
-      {/* ====================================== */}
-      {/* ERROR MESSAGE */}
-      {/* ====================================== */}
+      {/* =====================================================
+          ERROR MESSAGE
+      ===================================================== */}
 
       {error && (
         <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -766,9 +905,9 @@ export default function KnowledgeBase({
         </div>
       )}
 
-      {/* ====================================== */}
-      {/* DOCUMENT LIST */}
-      {/* ====================================== */}
+      {/* =====================================================
+          DOCUMENTS
+      ===================================================== */}
 
       <div className="mt-8">
         <div className="flex items-center justify-between">
@@ -807,6 +946,10 @@ export default function KnowledgeBase({
           <div className="mt-3 space-y-3">
             {documents.map(
               (document) => {
+                const isProcessing =
+                  processingDocumentId ===
+                  document.id;
+
                 const isEmbedding =
                   embeddingDocumentId ===
                   document.id;
@@ -832,7 +975,9 @@ export default function KnowledgeBase({
                     }
                     className="rounded-xl border border-gray-200 bg-white p-4 transition hover:border-gray-300 hover:shadow-sm"
                   >
-                    {/* DOCUMENT HEADER */}
+                    {/* ==========================================
+                        DOCUMENT HEADER
+                    =========================================== */}
 
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex min-w-0 items-center gap-3">
@@ -855,12 +1000,18 @@ export default function KnowledgeBase({
                         </div>
                       </div>
 
-                      {/* STATUS BADGE */}
+                      {/* ========================================
+                          STATUS
+                      ========================================= */}
 
                       <div className="flex shrink-0 items-center gap-2">
                         {isDeleting ? (
                           <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700">
                             Deleting...
+                          </span>
+                        ) : isProcessing ? (
+                          <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                            Processing...
                           </span>
                         ) : isEmbedding ? (
                           <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
@@ -870,15 +1021,21 @@ export default function KnowledgeBase({
                           <span className="rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
                             ✓ Embedded
                           </span>
-                        ) : (
+                        ) : hasChunks ? (
                           <span className="rounded-full bg-yellow-50 px-2.5 py-1 text-xs font-medium text-yellow-700">
                             Processed
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700">
+                            Processing required
                           </span>
                         )}
                       </div>
                     </div>
 
-                    {/* PIPELINE STATUS */}
+                    {/* ==========================================
+                        PIPELINE STATUS
+                    =========================================== */}
 
                     <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
                       {/* STEP 1 */}
@@ -903,6 +1060,8 @@ export default function KnowledgeBase({
                         <p className="mt-0.5 text-xs font-medium text-gray-700">
                           {hasChunks
                             ? "✓ Document processed"
+                            : isProcessing
+                            ? "⟳ Processing document"
                             : "○ Processing required"}
                         </p>
                       </div>
@@ -919,12 +1078,16 @@ export default function KnowledgeBase({
                             ? "✓ Vector embedding ready"
                             : isEmbedding
                             ? "⟳ Generating vector"
+                            : !hasChunks
+                            ? "○ Process document first"
                             : "○ Embedding required"}
                         </p>
                       </div>
                     </div>
 
-                    {/* ACTIONS */}
+                    {/* ==========================================
+                        ACTIONS
+                    =========================================== */}
 
                     <div className="mt-4 flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
                       <div>
@@ -950,28 +1113,68 @@ export default function KnowledgeBase({
                               knowledge base.
                             </p>
                           </>
+                        ) : !hasChunks ? (
+                          <>
+                            <p className="text-sm font-medium text-gray-800">
+                              Process document into
+                              knowledge chunks
+                            </p>
+
+                            <p className="mt-0.5 text-xs text-gray-500">
+                              Extract text and split
+                              this document into chunks
+                              before generating
+                              embeddings.
+                            </p>
+                          </>
                         ) : (
                           <>
                             <p className="text-sm font-medium text-gray-800">
-                              {isEmbedding
-                                ? "Generating embeddings..."
-                                : "Convert document chunks into vector embeddings"}
+                              Convert document chunks
+                              into vector embeddings
                             </p>
 
                             <p className="mt-0.5 text-xs text-gray-500">
                               Embeddings enable
-                              semantic search
-                              over this document.
+                              semantic search over
+                              this document.
                             </p>
                           </>
                         )}
                       </div>
 
                       <div className="flex shrink-0 items-center gap-2">
+                        {/* ======================================
+                            MAIN ACTION
+                        ======================================= */}
+
                         {isEmbedded ? (
                           <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs font-medium text-green-700">
                             ✓ Ready
                           </div>
+                        ) : !hasChunks ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleProcessDocument(
+                                document.id
+                              )
+                            }
+                            disabled={
+                              uploading ||
+                              processingDocumentId !==
+                                null ||
+                              embeddingDocumentId !==
+                                null ||
+                              deletingDocumentId !==
+                                null
+                            }
+                            className="rounded-md bg-black px-4 py-2 text-xs font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {isProcessing
+                              ? "Processing..."
+                              : "Process Document"}
+                          </button>
                         ) : (
                           <button
                             type="button"
@@ -982,6 +1185,8 @@ export default function KnowledgeBase({
                             }
                             disabled={
                               uploading ||
+                              processingDocumentId !==
+                                null ||
                               embeddingDocumentId !==
                                 null ||
                               deletingDocumentId !==
@@ -995,7 +1200,9 @@ export default function KnowledgeBase({
                           </button>
                         )}
 
-                        {/* DELETE BUTTON */}
+                        {/* ======================================
+                            DELETE
+                        ======================================= */}
 
                         <button
                           type="button"
@@ -1006,6 +1213,8 @@ export default function KnowledgeBase({
                           }
                           disabled={
                             uploading ||
+                            processingDocumentId !==
+                              null ||
                             embeddingDocumentId !==
                               null ||
                             deletingDocumentId !==

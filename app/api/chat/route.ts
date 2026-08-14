@@ -1,3 +1,5 @@
+export const runtime = "nodejs";
+export const maxDuration = 60;
 import Groq from "groq-sdk";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
