@@ -1,61 +1,25 @@
-import {
-  pipeline,
-  env,
-  type FeatureExtractionPipeline,
-} from "@huggingface/transformers";
+import { InferenceClient } from "@huggingface/inference";
 
-// Configure Transformers.js to use the WASM backend
-// instead of the native Node ONNX runtime.
-if (env.backends.onnx?.wasm) {
-  env.backends.onnx.wasm.wasmPaths =
-    "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/";
-}
+const MODEL = "Supabase/gte-small";
 
-let embeddingPipeline:
-  | FeatureExtractionPipeline
-  | null = null;
+let client: InferenceClient | null = null;
 
-let embeddingPipelinePromise:
-  | Promise<FeatureExtractionPipeline>
-  | null = null;
-
-async function getEmbeddingPipeline(): Promise<FeatureExtractionPipeline> {
-  // Reuse an already-loaded model.
-  if (embeddingPipeline) {
-    return embeddingPipeline;
+function getHuggingFaceClient() {
+  if (client) {
+    return client;
   }
 
-  // If the model is already being loaded, reuse that promise.
-  if (!embeddingPipelinePromise) {
-    console.log(
-      "[Embeddings] Loading Supabase/gte-small using WASM..."
-    );
+  const token = process.env.HUGGINGFACE_API_KEY;
 
-    embeddingPipelinePromise = pipeline(
-      "feature-extraction",
-      "Supabase/gte-small"
+  if (!token) {
+    throw new Error(
+      "HUGGINGFACE_API_KEY is not configured."
     );
   }
 
-  try {
-    embeddingPipeline =
-      await embeddingPipelinePromise;
+  client = new InferenceClient(token);
 
-    console.log(
-      "[Embeddings] Model loaded successfully."
-    );
-
-    return embeddingPipeline;
-  } catch (error) {
-    embeddingPipelinePromise = null;
-
-    console.error(
-      "[Embeddings] Model loading failed:",
-      error
-    );
-
-    throw error;
-  }
+  return client;
 }
 
 export async function generateEmbedding(
@@ -67,24 +31,34 @@ export async function generateEmbedding(
     );
   }
 
+  const hf = getHuggingFaceClient();
+
   console.log(
-    "[Embeddings] Generating embedding..."
+    "[Embeddings] Generating embedding using Hugging Face..."
   );
 
-  const extractor =
-    await getEmbeddingPipeline();
+  const output = await hf.featureExtraction({
+    model: MODEL,
+    inputs: text.trim(),
+  });
 
-  const output =
-    await extractor(
-      text,
-      {
-        pooling: "mean",
-        normalize: true,
-      }
-    );
+  /*
+   * Hugging Face can return different nesting depending
+   * on the provider/model response.
+   *
+   * We normalize it into number[].
+   */
 
-  const embedding =
-    Array.from(output.data) as number[];
+  let embedding: number[];
+
+  if (
+    Array.isArray(output) &&
+    Array.isArray(output[0])
+  ) {
+    embedding = output[0] as number[];
+  } else {
+    embedding = output as number[];
+  }
 
   console.log(
     "[Embeddings] Generated dimensions:",
