@@ -33,6 +33,9 @@ export default function KnowledgeBase({
   const [embeddingDocumentId, setEmbeddingDocumentId] =
     useState<string | null>(null);
 
+  const [deletingDocumentId, setDeletingDocumentId] =
+    useState<string | null>(null);
+
   const [documents, setDocuments] =
     useState<UploadedDocument[]>([]);
 
@@ -307,12 +310,10 @@ export default function KnowledgeBase({
           "/api/knowledge/process",
           {
             method: "POST",
-
             headers: {
               "Content-Type":
                 "application/json",
             },
-
             body: JSON.stringify({
               documentId:
                 uploadedDocument.id,
@@ -431,12 +432,10 @@ export default function KnowledgeBase({
           "/api/knowledge/embed",
           {
             method: "POST",
-
             headers: {
               "Content-Type":
                 "application/json",
             },
-
             body: JSON.stringify({
               documentId,
             }),
@@ -476,10 +475,6 @@ export default function KnowledgeBase({
         "number"
           ? data.embeddedCount
           : 0;
-
-      // ======================================
-      // MARK DOCUMENT AS EMBEDDED
-      // ======================================
 
       setDocuments(
         (current) =>
@@ -525,11 +520,106 @@ export default function KnowledgeBase({
   }
 
   // ==========================================
+  // DELETE DOCUMENT
+  // ==========================================
+
+  async function handleDeleteDocument(
+    document: UploadedDocument
+  ) {
+    const confirmed =
+      window.confirm(
+        `Are you sure you want to delete "${document.file_name}"?\n\nThis will permanently remove the document, its knowledge chunks, embeddings, and stored file.`
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setError("");
+      setMessage("");
+
+      setDeletingDocumentId(
+        document.id
+      );
+
+      const response =
+        await fetch(
+          `/api/knowledge/documents?documentId=${encodeURIComponent(
+            document.id
+          )}`,
+          {
+            method: "DELETE",
+          }
+        );
+
+      const text =
+        await response.text();
+
+      let data: {
+        error?: string;
+        message?: string;
+      } = {};
+
+      if (text.trim()) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          console.error(
+            "Delete API returned invalid JSON:",
+            text
+          );
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            `Document deletion failed with status ${response.status}.`
+        );
+      }
+
+      // Remove from UI immediately
+      setDocuments(
+        (current) =>
+          current.filter(
+            (item) =>
+              item.id !==
+              document.id
+          )
+      );
+
+      setMessage(
+        `"${document.file_name}" was deleted successfully.`
+      );
+    } catch (error) {
+      console.error(
+        "Document deletion error:",
+        error
+      );
+
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while deleting the document."
+      );
+    } finally {
+      setDeletingDocumentId(
+        null
+      );
+    }
+  }
+
+  // ==========================================
   // OPEN FILE PICKER
   // ==========================================
 
   function openFilePicker() {
-    if (uploading) {
+    if (
+      uploading ||
+      deletingDocumentId !==
+        null
+    ) {
       return;
     }
 
@@ -614,6 +704,8 @@ export default function KnowledgeBase({
           disabled={
             uploading ||
             embeddingDocumentId !==
+              null ||
+            deletingDocumentId !==
               null
           }
           className="flex w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 px-6 py-10 text-center transition hover:border-gray-500 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -646,6 +738,8 @@ export default function KnowledgeBase({
           disabled={
             uploading ||
             embeddingDocumentId !==
+              null ||
+            deletingDocumentId !==
               null
           }
           className="hidden"
@@ -717,6 +811,10 @@ export default function KnowledgeBase({
                   embeddingDocumentId ===
                   document.id;
 
+                const isDeleting =
+                  deletingDocumentId ===
+                  document.id;
+
                 const isEmbedded =
                   document.embedded ===
                   true;
@@ -759,19 +857,25 @@ export default function KnowledgeBase({
 
                       {/* STATUS BADGE */}
 
-                      {isEmbedding ? (
-                        <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-                          Generating...
-                        </span>
-                      ) : isEmbedded ? (
-                        <span className="shrink-0 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
-                          ✓ Embedded
-                        </span>
-                      ) : (
-                        <span className="shrink-0 rounded-full bg-yellow-50 px-2.5 py-1 text-xs font-medium text-yellow-700">
-                          Processed
-                        </span>
-                      )}
+                      <div className="flex shrink-0 items-center gap-2">
+                        {isDeleting ? (
+                          <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700">
+                            Deleting...
+                          </span>
+                        ) : isEmbedding ? (
+                          <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                            Generating...
+                          </span>
+                        ) : isEmbedded ? (
+                          <span className="rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
+                            ✓ Embedded
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-yellow-50 px-2.5 py-1 text-xs font-medium text-yellow-700">
+                            Processed
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* PIPELINE STATUS */}
@@ -820,7 +924,7 @@ export default function KnowledgeBase({
                       </div>
                     </div>
 
-                    {/* EMBEDDING ACTION */}
+                    {/* ACTIONS */}
 
                     <div className="mt-4 flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
                       <div>
@@ -863,30 +967,57 @@ export default function KnowledgeBase({
                         )}
                       </div>
 
-                      {isEmbedded ? (
-                        <div className="shrink-0 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs font-medium text-green-700">
-                          ✓ Ready
-                        </div>
-                      ) : (
+                      <div className="flex shrink-0 items-center gap-2">
+                        {isEmbedded ? (
+                          <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs font-medium text-green-700">
+                            ✓ Ready
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleGenerateEmbeddings(
+                                document.id
+                              )
+                            }
+                            disabled={
+                              uploading ||
+                              embeddingDocumentId !==
+                                null ||
+                              deletingDocumentId !==
+                                null
+                            }
+                            className="rounded-md bg-black px-4 py-2 text-xs font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {isEmbedding
+                              ? "Generating..."
+                              : "Generate Embeddings"}
+                          </button>
+                        )}
+
+                        {/* DELETE BUTTON */}
+
                         <button
                           type="button"
                           onClick={() =>
-                            handleGenerateEmbeddings(
-                              document.id
+                            handleDeleteDocument(
+                              document
                             )
                           }
                           disabled={
                             uploading ||
                             embeddingDocumentId !==
+                              null ||
+                            deletingDocumentId !==
                               null
                           }
-                          className="shrink-0 rounded-md bg-black px-4 py-2 text-xs font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="rounded-md border border-red-200 bg-white px-4 py-2 text-xs font-medium text-red-600 transition hover:border-red-300 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {isEmbedding
-                            ? "Generating..."
-                            : "Generate Embeddings"}
+                          {isDeleting
+                            ? "Deleting..."
+                            : "Delete"}
                         </button>
-                      )}
+                      </div>
                     </div>
                   </div>
                 );

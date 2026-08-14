@@ -20,7 +20,7 @@ export default async function AgentPage({
   const supabase = await createClient();
 
   // ==========================================
-  // GET CURRENT USER
+  // AUTHENTICATION
   // ==========================================
 
   const {
@@ -35,32 +35,22 @@ export default async function AgentPage({
   // GET AGENT
   // ==========================================
 
-  const {
-    data: project,
-    error,
-  } = await supabase
+  const { data: project, error } = await supabase
     .from("projects")
     .select("*")
     .eq("id", id)
     .eq("user_id", user.id)
     .single();
 
-  // ==========================================
-  // AGENT NOT FOUND
-  // ==========================================
-
   if (error || !project) {
     notFound();
   }
 
   // ==========================================
-  // GET AGENT SYSTEM PROMPT
+  // GET LATEST SYSTEM PROMPT
   // ==========================================
 
-  const {
-    data: prompt,
-    error: promptError,
-  } = await supabase
+  const { data: prompt, error: promptError } = await supabase
     .from("prompts")
     .select("content")
     .eq("project_id", project.id)
@@ -71,10 +61,7 @@ export default async function AgentPage({
     .maybeSingle();
 
   if (promptError) {
-    console.error(
-      "Error fetching agent prompt:",
-      promptError
-    );
+    console.error("Error fetching agent prompt:", promptError);
   }
 
   const defaultPrompt = `You are a helpful AI assistant.
@@ -94,71 +81,187 @@ Be professional, clear, and helpful.`;
   return (
     <main className="min-h-screen bg-gray-50">
       {/* ======================================
-          HEADER
+          TOP HEADER
       ====================================== */}
 
-      <div className="border-b border-gray-200 bg-white">
-        <div className="mx-auto max-w-7xl px-6 py-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
+      <header className="border-b border-gray-200 bg-white">
+        <div className="mx-auto max-w-7xl px-6 py-6 lg:px-8">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
               <Link
                 href="/dashboard"
-                className="text-sm text-gray-500 transition hover:text-gray-900"
+                className="inline-flex items-center text-sm font-medium text-gray-500 transition hover:text-gray-950"
               >
                 ← Back to Dashboard
               </Link>
 
-              <h1 className="mt-3 text-3xl font-bold tracking-tight text-gray-900">
-                {project.name}
-              </h1>
+              <div className="mt-4 flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gray-950 text-lg text-white">
+                  ✦
+                </div>
 
-              <p className="mt-2 max-w-2xl text-sm text-gray-500">
+                <div className="min-w-0">
+                  <h1 className="truncate text-2xl font-bold tracking-tight text-gray-950 sm:text-3xl">
+                    {project.name}
+                  </h1>
+
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+
+                    <span className="text-xs font-medium text-gray-500">
+                      Active AI Agent
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <p className="mt-4 max-w-3xl text-sm leading-6 text-gray-500">
                 {project.description ||
-                  "Configure and test your AI agent."}
+                  "Configure your agent, connect knowledge, and test how it responds to users."}
               </p>
             </div>
 
-            <div className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600">
-              AI Agent
+            <div className="shrink-0">
+              <div className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600">
+                Agent Workspace
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </header>
 
       {/* ======================================
-          MAIN CONTENT
+          WORKSPACE
       ====================================== */}
 
-      <div className="mx-auto max-w-7xl px-6 py-8">
+      <div className="mx-auto max-w-7xl px-6 py-8 lg:px-8">
         {/* ====================================
-            AGENT CONFIGURATION
+            QUICK OVERVIEW
         ==================================== */}
 
-        <AgentConfiguration
-          agentId={project.id}
-          initialName={project.name}
-          initialDescription={
-            project.description || ""
-          }
-          initialPrompt={
-            prompt?.content || defaultPrompt
-          }
-        />
+        <section className="mb-8 grid gap-4 sm:grid-cols-3">
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Agent
+            </p>
+
+            <p className="mt-2 text-sm font-semibold text-gray-950">
+              {project.name}
+            </p>
+
+            <p className="mt-1 text-xs text-gray-500">
+              Custom AI assistant
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Instructions
+            </p>
+
+            <p className="mt-2 text-sm font-semibold text-gray-950">
+              {prompt?.content ? "Configured" : "Default"}
+            </p>
+
+            <p className="mt-1 text-xs text-gray-500">
+              Controls agent behavior
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Knowledge
+            </p>
+
+            <p className="mt-2 text-sm font-semibold text-gray-950">
+              RAG Enabled
+            </p>
+
+            <p className="mt-1 text-xs text-gray-500">
+              Ground responses in your documents
+            </p>
+          </div>
+        </section>
+
+        {/* ====================================
+            CONFIGURATION
+        ==================================== */}
+
+        <section>
+          <div className="mb-4">
+            <h2 className="text-xl font-semibold tracking-tight text-gray-950">
+              Agent Configuration
+            </h2>
+
+            <p className="mt-1 text-sm text-gray-500">
+              Define what your agent is called, what it does, and how it
+              should respond.
+            </p>
+          </div>
+
+          <AgentConfiguration
+            agentId={project.id}
+            initialName={project.name}
+            initialDescription={project.description || ""}
+            initialPrompt={prompt?.content || defaultPrompt}
+          />
+        </section>
 
         {/* ====================================
             KNOWLEDGE BASE
         ==================================== */}
 
-        <div className="mt-8">
+        <section className="mt-10">
+          <div className="mb-4">
+            <h2 className="text-xl font-semibold tracking-tight text-gray-950">
+              Knowledge Base
+            </h2>
+
+            <p className="mt-1 text-sm text-gray-500">
+              Upload documents that your agent can use to provide
+              grounded answers.
+            </p>
+          </div>
+
           <KnowledgeBase agentId={project.id} />
-        </div>
+        </section>
 
         {/* ====================================
-            CHAT
+            CHAT / TESTING
         ==================================== */}
 
-        <div className="mt-8">
+        <section className="mt-10">
+          <div className="mb-4">
+            <h2 className="text-xl font-semibold tracking-tight text-gray-950">
+              Test Your Agent
+            </h2>
+
+            <p className="mt-1 text-sm text-gray-500">
+              Start a conversation and verify your agent's behavior,
+              instructions, and knowledge retrieval.
+            </p>
+          </div>
+
           <AgentChat agentId={project.id} />
+        </section>
+
+        {/* ====================================
+            FOOTER
+        ==================================== */}
+
+        <div className="mt-12 border-t border-gray-200 pt-6">
+          <div className="flex flex-col gap-2 text-center sm:flex-row sm:items-center sm:justify-between sm:text-left">
+            <p className="text-xs text-gray-400">
+              AgentHub · Agent configuration, knowledge, and testing
+            </p>
+
+            <Link
+              href="/dashboard"
+              className="text-xs font-medium text-gray-500 transition hover:text-gray-950"
+            >
+              Back to all agents →
+            </Link>
+          </div>
         </div>
       </div>
     </main>
