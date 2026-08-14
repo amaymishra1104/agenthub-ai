@@ -1,6 +1,6 @@
 import { InferenceClient } from "@huggingface/inference";
 
-const MODEL = "Supabase/gte-small";
+const MODEL = "sentence-transformers/all-MiniLM-L6-v2";
 
 let client: InferenceClient | null = null;
 
