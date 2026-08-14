@@ -16,6 +16,9 @@ type UploadedDocument = {
   file_name: string;
   file_type: string | null;
   created_at: string;
+  embedded?: boolean;
+  chunk_count?: number;
+  embedded_chunk_count?: number;
 };
 
 export default function KnowledgeBase({
@@ -47,19 +50,17 @@ export default function KnowledgeBase({
     try {
       setError("");
 
-      const response =
-        await fetch(
-          `/api/knowledge/documents?agentId=${encodeURIComponent(
-            agentId
-          )}`,
-          {
-            method: "GET",
-            cache: "no-store",
-          }
-        );
+      const response = await fetch(
+        `/api/knowledge/documents?agentId=${encodeURIComponent(
+          agentId
+        )}`,
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      );
 
-      const text =
-        await response.text();
+      const text = await response.text();
 
       if (!response.ok) {
         console.error(
@@ -67,39 +68,50 @@ export default function KnowledgeBase({
           text
         );
 
-        return;
+        throw new Error(
+          `Unable to load documents. Status ${response.status}.`
+        );
       }
 
       if (!text.trim()) {
+        setDocuments([]);
         return;
       }
 
-      let data;
+      let data: {
+        documents?: UploadedDocument[];
+        error?: string;
+      };
 
       try {
-        data =
-          JSON.parse(text);
+        data = JSON.parse(text);
       } catch {
         console.error(
-          "Documents API returned invalid JSON."
+          "Documents API returned invalid JSON:",
+          text
         );
 
+        throw new Error(
+          "The documents API returned an invalid response."
+        );
+      }
+
+      if (!Array.isArray(data.documents)) {
+        setDocuments([]);
         return;
       }
 
-      if (
-        Array.isArray(
-          data.documents
-        )
-      ) {
-        setDocuments(
-          data.documents
-        );
-      }
+      setDocuments(data.documents);
     } catch (error) {
       console.error(
         "Failed to load documents:",
         error
+      );
+
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load knowledge documents."
       );
     }
   }
@@ -149,16 +161,12 @@ export default function KnowledgeBase({
       file.name.toLowerCase();
 
     const validType =
-      allowedTypes.includes(
-        file.type
-      );
+      allowedTypes.includes(file.type);
 
     const validExtension =
       allowedExtensions.some(
         (extension) =>
-          fileName.endsWith(
-            extension
-          )
+          fileName.endsWith(extension)
       );
 
     if (
@@ -227,13 +235,14 @@ export default function KnowledgeBase({
       const uploadText =
         await uploadResponse.text();
 
-      let uploadData;
+      let uploadData: {
+        document?: UploadedDocument;
+        error?: string;
+      };
 
       try {
         uploadData =
-          JSON.parse(
-            uploadText
-          );
+          JSON.parse(uploadText);
       } catch {
         console.error(
           "Upload API returned:",
@@ -271,7 +280,12 @@ export default function KnowledgeBase({
 
       setDocuments(
         (current) => [
-          uploadedDocument,
+          {
+            ...uploadedDocument,
+            embedded: false,
+            chunk_count: 0,
+            embedded_chunk_count: 0,
+          },
           ...current.filter(
             (document) =>
               document.id !==
@@ -309,13 +323,14 @@ export default function KnowledgeBase({
       const processText =
         await processResponse.text();
 
-      let processData;
+      let processData: {
+        chunkCount?: number;
+        error?: string;
+      };
 
       try {
         processData =
-          JSON.parse(
-            processText
-          );
+          JSON.parse(processText);
       } catch {
         console.error(
           "Process API returned:",
@@ -340,12 +355,29 @@ export default function KnowledgeBase({
           ? processData.chunkCount
           : 0;
 
+      setDocuments(
+        (current) =>
+          current.map(
+            (document) =>
+              document.id ===
+              uploadedDocument.id
+                ? {
+                    ...document,
+                    embedded: false,
+                    chunk_count:
+                      chunkCount,
+                    embedded_chunk_count: 0,
+                  }
+                : document
+          )
+      );
+
       setMessage(
         `Document processed successfully. Created ${chunkCount} knowledge ${
           chunkCount === 1
             ? "chunk"
             : "chunks"
-        }.`
+        }. Generate embeddings to enable semantic search.`
       );
 
       // ======================================
@@ -414,11 +446,13 @@ export default function KnowledgeBase({
       const text =
         await response.text();
 
-      let data;
+      let data: {
+        embeddedCount?: number;
+        error?: string;
+      };
 
       try {
-        data =
-          JSON.parse(text);
+        data = JSON.parse(text);
       } catch {
         console.error(
           "Embedding API returned:",
@@ -443,12 +477,32 @@ export default function KnowledgeBase({
           ? data.embeddedCount
           : 0;
 
+      // ======================================
+      // MARK DOCUMENT AS EMBEDDED
+      // ======================================
+
+      setDocuments(
+        (current) =>
+          current.map(
+            (document) =>
+              document.id ===
+              documentId
+                ? {
+                    ...document,
+                    embedded: true,
+                    embedded_chunk_count:
+                      embeddedCount,
+                  }
+                : document
+          )
+      );
+
       setMessage(
         `Embeddings generated successfully for ${embeddedCount} ${
           embeddedCount === 1
             ? "chunk"
             : "chunks"
-        }.`
+        }. This document is now ready for semantic search.`
       );
     } catch (error) {
       console.error(
@@ -483,6 +537,38 @@ export default function KnowledgeBase({
   }
 
   // ==========================================
+  // FORMAT FILE TYPE
+  // ==========================================
+
+  function getFileTypeLabel(
+    fileType: string | null
+  ) {
+    if (!fileType) {
+      return "Document";
+    }
+
+    if (
+      fileType.includes("pdf")
+    ) {
+      return "PDF document";
+    }
+
+    if (
+      fileType.includes("markdown")
+    ) {
+      return "Markdown document";
+    }
+
+    if (
+      fileType.includes("text")
+    ) {
+      return "Text document";
+    }
+
+    return fileType;
+  }
+
+  // ==========================================
   // UI
   // ==========================================
 
@@ -492,16 +578,27 @@ export default function KnowledgeBase({
       {/* HEADER */}
       {/* ====================================== */}
 
-      <div>
-        <h2 className="text-xl font-semibold text-gray-900">
-          Knowledge Base
-        </h2>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900">
+            Knowledge Base
+          </h2>
 
-        <p className="mt-1 text-sm text-gray-500">
-          Upload documents that your
-          AI agent can use when
-          answering questions.
-        </p>
+          <p className="mt-1 text-sm text-gray-500">
+            Upload documents that your AI
+            agent can use when answering
+            questions.
+          </p>
+        </div>
+
+        {documents.length > 0 && (
+          <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
+            {documents.length}{" "}
+            {documents.length === 1
+              ? "document"
+              : "documents"}
+          </div>
+        )}
       </div>
 
       {/* ====================================== */}
@@ -534,8 +631,8 @@ export default function KnowledgeBase({
           </p>
 
           <p className="mt-1 text-xs text-gray-500">
-            PDF, TXT, or Markdown
-            · Maximum 10 MB
+            PDF, TXT, or Markdown ·
+            Maximum 10 MB
           </p>
         </button>
 
@@ -585,29 +682,31 @@ export default function KnowledgeBase({
             Documents
           </h3>
 
-          {documents.length >
-            0 && (
+          {documents.length > 0 && (
             <span className="text-xs text-gray-500">
               {documents.length}{" "}
-              {documents.length ===
-              1
+              {documents.length === 1
                 ? "document"
                 : "documents"}
             </span>
           )}
         </div>
 
-        {documents.length ===
-        0 ? (
-          <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-6 text-center">
-            <p className="text-sm text-gray-500">
+        {documents.length === 0 ? (
+          <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-8 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white text-xl shadow-sm">
+              📚
+            </div>
+
+            <p className="mt-3 text-sm font-medium text-gray-700">
               No documents uploaded
               yet.
             </p>
 
             <p className="mt-1 text-xs text-gray-400">
-              Upload your first
-              document above.
+              Upload your first document
+              above to give your agent
+              additional knowledge.
             </p>
           </div>
         ) : (
@@ -618,18 +717,26 @@ export default function KnowledgeBase({
                   embeddingDocumentId ===
                   document.id;
 
+                const isEmbedded =
+                  document.embedded ===
+                  true;
+
+                const hasChunks =
+                  typeof document.chunk_count ===
+                    "number" &&
+                  document.chunk_count >
+                    0;
+
                 return (
                   <div
                     key={
                       document.id
                     }
-                    className="rounded-lg border border-gray-200 p-4"
+                    className="rounded-xl border border-gray-200 bg-white p-4 transition hover:border-gray-300 hover:shadow-sm"
                   >
-                    {/* ================================ */}
-                    {/* DOCUMENT INFO */}
-                    {/* ================================ */}
+                    {/* DOCUMENT HEADER */}
 
-                    <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-start justify-between gap-4">
                       <div className="flex min-w-0 items-center gap-3">
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-lg">
                           📄
@@ -643,52 +750,143 @@ export default function KnowledgeBase({
                           </p>
 
                           <p className="mt-0.5 text-xs text-gray-500">
-                            {document.file_type ||
-                              "Document"}
+                            {getFileTypeLabel(
+                              document.file_type
+                            )}
                           </p>
                         </div>
                       </div>
 
-                      {/* ============================== */}
-                      {/* STATUS */}
-                      {/* ============================== */}
+                      {/* STATUS BADGE */}
 
-                      <span className="shrink-0 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
-                        Processed
-                      </span>
+                      {isEmbedding ? (
+                        <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                          Generating...
+                        </span>
+                      ) : isEmbedded ? (
+                        <span className="shrink-0 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
+                          ✓ Embedded
+                        </span>
+                      ) : (
+                        <span className="shrink-0 rounded-full bg-yellow-50 px-2.5 py-1 text-xs font-medium text-yellow-700">
+                          Processed
+                        </span>
+                      )}
                     </div>
 
-                    {/* ================================ */}
+                    {/* PIPELINE STATUS */}
+
+                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {/* STEP 1 */}
+
+                      <div className="rounded-lg bg-gray-50 px-3 py-2">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                          Step 1
+                        </p>
+
+                        <p className="mt-0.5 text-xs font-medium text-gray-700">
+                          ✓ Document uploaded
+                        </p>
+                      </div>
+
+                      {/* STEP 2 */}
+
+                      <div className="rounded-lg bg-gray-50 px-3 py-2">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                          Step 2
+                        </p>
+
+                        <p className="mt-0.5 text-xs font-medium text-gray-700">
+                          {hasChunks
+                            ? "✓ Document processed"
+                            : "○ Processing required"}
+                        </p>
+                      </div>
+
+                      {/* STEP 3 */}
+
+                      <div className="rounded-lg bg-gray-50 px-3 py-2">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                          Step 3
+                        </p>
+
+                        <p className="mt-0.5 text-xs font-medium text-gray-700">
+                          {isEmbedded
+                            ? "✓ Vector embedding ready"
+                            : isEmbedding
+                            ? "⟳ Generating vector"
+                            : "○ Embedding required"}
+                        </p>
+                      </div>
+                    </div>
+
                     {/* EMBEDDING ACTION */}
-                    {/* ================================ */}
 
-                    <div className="mt-4 flex items-center justify-between gap-3 border-t border-gray-100 pt-3">
-                      <p className="text-xs text-gray-500">
-                        Convert this
-                        document's chunks
-                        into vector
-                        embeddings for
-                        semantic search.
-                      </p>
+                    <div className="mt-4 flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        {isEmbedded ? (
+                          <>
+                            <p className="text-sm font-medium text-gray-800">
+                              Ready for semantic
+                              search
+                            </p>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleGenerateEmbeddings(
-                            document.id
-                          )
-                        }
-                        disabled={
-                          uploading ||
-                          embeddingDocumentId !==
-                            null
-                        }
-                        className="shrink-0 rounded-md bg-black px-3 py-2 text-xs font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {isEmbedding
-                          ? "Generating..."
-                          : "Generate Embeddings"}
-                      </button>
+                            <p className="mt-0.5 text-xs text-gray-500">
+                              {document.embedded_chunk_count ??
+                                document.chunk_count ??
+                                0}{" "}
+                              vector{" "}
+                              {(document.embedded_chunk_count ??
+                                document.chunk_count ??
+                                0) ===
+                              1
+                                ? "embedding"
+                                : "embeddings"}{" "}
+                              stored in the
+                              knowledge base.
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-sm font-medium text-gray-800">
+                              {isEmbedding
+                                ? "Generating embeddings..."
+                                : "Convert document chunks into vector embeddings"}
+                            </p>
+
+                            <p className="mt-0.5 text-xs text-gray-500">
+                              Embeddings enable
+                              semantic search
+                              over this document.
+                            </p>
+                          </>
+                        )}
+                      </div>
+
+                      {isEmbedded ? (
+                        <div className="shrink-0 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs font-medium text-green-700">
+                          ✓ Ready
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleGenerateEmbeddings(
+                              document.id
+                            )
+                          }
+                          disabled={
+                            uploading ||
+                            embeddingDocumentId !==
+                              null
+                          }
+                          className="shrink-0 rounded-md bg-black px-4 py-2 text-xs font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isEmbedding
+                            ? "Generating..."
+                            : "Generate Embeddings"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

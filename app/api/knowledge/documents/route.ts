@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-export async function GET(
-  request: Request
-) {
+export async function GET(request: Request) {
   try {
     console.log(
       "================================="
@@ -16,10 +14,6 @@ export async function GET(
     console.log(
       "================================="
     );
-
-    // ========================================
-    // CREATE SUPABASE SERVER CLIENT
-    // ========================================
 
     const supabase =
       await createClient();
@@ -64,7 +58,7 @@ export async function GET(
     }
 
     // ========================================
-    // GET AGENT ID FROM URL
+    // GET AGENT ID
     // ========================================
 
     const url =
@@ -103,14 +97,8 @@ export async function GET(
       await supabase
         .from("projects")
         .select("id")
-        .eq(
-          "id",
-          agentId
-        )
-        .eq(
-          "user_id",
-          user.id
-        )
+        .eq("id", agentId)
+        .eq("user_id", user.id)
         .single();
 
     if (
@@ -178,18 +166,133 @@ export async function GET(
     }
 
     // ========================================
+    // GET CHUNK / EMBEDDING STATUS
+    // ========================================
+
+    const documentIds =
+      (documents ?? []).map(
+        (document) =>
+          document.id
+      );
+
+    let chunkStatus:
+      {
+        id: string;
+        document_id: string;
+        embedding: unknown;
+      }[] = [];
+
+    if (
+      documentIds.length > 0
+    ) {
+      const {
+        data: chunks,
+        error: chunksError,
+      } =
+        await supabase
+          .from(
+            "knowledge_chunks"
+          )
+          .select(
+            "id, document_id, embedding"
+          )
+          .in(
+            "document_id",
+            documentIds
+          );
+
+      if (chunksError) {
+        console.error(
+          "Knowledge chunks query error:",
+          chunksError
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Unable to load knowledge chunk status: " +
+              chunksError.message,
+          },
+          {
+            status: 500,
+          }
+        );
+      }
+
+      chunkStatus =
+        chunks ?? [];
+    }
+
+    // ========================================
+    // BUILD DOCUMENT STATUS
+    // ========================================
+
+    const enrichedDocuments =
+      (documents ?? []).map(
+        (document) => {
+          const chunks =
+            chunkStatus.filter(
+              (chunk) =>
+                chunk.document_id ===
+                document.id
+            );
+
+          const chunkCount =
+            chunks.length;
+
+          const embeddedChunkCount =
+            chunks.filter(
+              (chunk) =>
+                chunk.embedding !==
+                null
+            ).length;
+
+          return {
+            ...document,
+
+            chunk_count:
+              chunkCount,
+
+            embedded_chunk_count:
+              embeddedChunkCount,
+
+            embedded:
+              chunkCount > 0 &&
+              embeddedChunkCount ===
+                chunkCount,
+          };
+        }
+      );
+
+    // ========================================
     // SUCCESS
     // ========================================
 
     console.log(
       "Documents found:",
-      documents?.length ?? 0
+      enrichedDocuments.length
+    );
+
+    console.log(
+      "Document status:",
+      enrichedDocuments.map(
+        (document) => ({
+          file_name:
+            document.file_name,
+          chunks:
+            document.chunk_count,
+          embedded:
+            document.embedded_chunk_count,
+          ready:
+            document.embedded,
+        })
+      )
     );
 
     return NextResponse.json(
       {
         documents:
-          documents ?? [],
+          enrichedDocuments,
       },
       {
         status: 200,

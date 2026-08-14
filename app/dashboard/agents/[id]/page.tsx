@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 
 import KnowledgeBase from "@/components/knowledge-base";
 import AgentChat from "@/components/agent-chat";
+import AgentConfiguration from "@/components/agent-configuration";
 import { createClient } from "@/lib/supabase/server";
 
 type AgentPageProps = {
@@ -53,14 +54,48 @@ export default async function AgentPage({
   }
 
   // ==========================================
+  // GET AGENT SYSTEM PROMPT
+  // ==========================================
+
+  const {
+    data: prompt,
+    error: promptError,
+  } = await supabase
+    .from("prompts")
+    .select("content")
+    .eq("project_id", project.id)
+    .order("updated_at", {
+      ascending: false,
+    })
+    .limit(1)
+    .maybeSingle();
+
+  if (promptError) {
+    console.error(
+      "Error fetching agent prompt:",
+      promptError
+    );
+  }
+
+  const defaultPrompt = `You are a helpful AI assistant.
+
+Your job is to assist users with their questions and provide accurate, useful responses.
+
+Use the provided knowledge base when answering questions about information specific to this agent or organization.
+
+If the required information is not available in the knowledge base, clearly say that you do not have that information. Do not invent company-specific facts.
+
+Be professional, clear, and helpful.`;
+
+  // ==========================================
   // PAGE
   // ==========================================
 
   return (
     <main className="min-h-screen bg-gray-50">
-      {/* ====================================== */}
-      {/* HEADER */}
-      {/* ====================================== */}
+      {/* ======================================
+          HEADER
+      ====================================== */}
 
       <div className="border-b border-gray-200 bg-white">
         <div className="mx-auto max-w-7xl px-6 py-6">
@@ -90,70 +125,40 @@ export default async function AgentPage({
         </div>
       </div>
 
-      {/* ====================================== */}
-      {/* MAIN CONTENT */}
-      {/* ====================================== */}
+      {/* ======================================
+          MAIN CONTENT
+      ====================================== */}
 
       <div className="mx-auto max-w-7xl px-6 py-8">
-        {/* ==================================== */}
-        {/* AGENT INFORMATION */}
-        {/* ==================================== */}
+        {/* ====================================
+            AGENT CONFIGURATION
+        ==================================== */}
 
-        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">
-            Agent Configuration
-          </h2>
+        <AgentConfiguration
+          agentId={project.id}
+          initialName={project.name}
+          initialDescription={
+            project.description || ""
+          }
+          initialPrompt={
+            prompt?.content || defaultPrompt
+          }
+        />
 
-          <p className="mt-1 text-sm text-gray-500">
-            Information about this AI agent.
-          </p>
-
-          <div className="mt-6 grid gap-6 md:grid-cols-2">
-            {/* Agent Name */}
-
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-                Agent Name
-              </p>
-
-              <p className="mt-1 text-sm font-medium text-gray-900">
-                {project.name}
-              </p>
-            </div>
-
-            {/* Description */}
-
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-                Description
-              </p>
-
-              <p className="mt-1 text-sm text-gray-700">
-                {project.description ||
-                  "No description provided."}
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* ==================================== */}
-        {/* KNOWLEDGE BASE */}
-        {/* ==================================== */}
+        {/* ====================================
+            KNOWLEDGE BASE
+        ==================================== */}
 
         <div className="mt-8">
-          <KnowledgeBase
-            agentId={project.id}
-          />
+          <KnowledgeBase agentId={project.id} />
         </div>
 
-        {/* ==================================== */}
-        {/* CHAT */}
-        {/* ==================================== */}
+        {/* ====================================
+            CHAT
+        ==================================== */}
 
         <div className="mt-8">
-          <AgentChat
-            agentId={project.id}
-          />
+          <AgentChat agentId={project.id} />
         </div>
       </div>
     </main>
