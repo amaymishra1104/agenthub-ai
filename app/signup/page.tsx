@@ -348,6 +348,10 @@ export default function SignupPage() {
               email:
                 trimmedEmail,
               password,
+              options: {
+                emailRedirectTo:
+                  emailRedirectTo,
+              },
             }
           );
 
