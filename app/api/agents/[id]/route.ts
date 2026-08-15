@@ -7,6 +7,10 @@ type RouteContext = {
   }>;
 };
 
+// ============================================================
+// GET AGENT
+// ============================================================
+
 export async function GET(
   request: Request,
   context: RouteContext
@@ -16,9 +20,9 @@ export async function GET(
 
     const supabase = await createClient();
 
-    // ==========================================
+    // ========================================================
     // AUTHENTICATION
-    // ==========================================
+    // ========================================================
 
     const {
       data: { user },
@@ -36,9 +40,9 @@ export async function GET(
       );
     }
 
-    // ==========================================
+    // ========================================================
     // VERIFY PROJECT OWNERSHIP
-    // ==========================================
+    // ========================================================
 
     const {
       data: project,
@@ -62,9 +66,9 @@ export async function GET(
       );
     }
 
-    // ==========================================
+    // ========================================================
     // GET LATEST PROMPT
-    // ==========================================
+    // ========================================================
 
     const {
       data: prompt,
@@ -122,6 +126,10 @@ export async function GET(
   }
 }
 
+// ============================================================
+// UPDATE AGENT
+// ============================================================
+
 export async function PATCH(
   request: Request,
   context: RouteContext
@@ -146,9 +154,9 @@ export async function PATCH(
         ? body.prompt.trim()
         : "";
 
-    // ==========================================
+    // ========================================================
     // VALIDATION
-    // ==========================================
+    // ========================================================
 
     if (!name) {
       return NextResponse.json(
@@ -175,9 +183,9 @@ export async function PATCH(
 
     const supabase = await createClient();
 
-    // ==========================================
+    // ========================================================
     // AUTHENTICATION
-    // ==========================================
+    // ========================================================
 
     const {
       data: { user },
@@ -195,9 +203,9 @@ export async function PATCH(
       );
     }
 
-    // ==========================================
+    // ========================================================
     // VERIFY PROJECT OWNERSHIP
-    // ==========================================
+    // ========================================================
 
     const {
       data: project,
@@ -221,9 +229,9 @@ export async function PATCH(
       );
     }
 
-    // ==========================================
+    // ========================================================
     // UPDATE PROJECT
-    // ==========================================
+    // ========================================================
 
     const {
       data: updatedProject,
@@ -233,7 +241,8 @@ export async function PATCH(
       .update({
         name,
         description,
-        updated_at: new Date().toISOString(),
+        updated_at:
+          new Date().toISOString(),
       })
       .eq("id", id)
       .eq("user_id", user.id)
@@ -260,9 +269,9 @@ export async function PATCH(
       );
     }
 
-    // ==========================================
-    // CHECK FOR EXISTING PROMPT
-    // ==========================================
+    // ========================================================
+    // CHECK EXISTING PROMPT
+    // ========================================================
 
     const {
       data: existingPrompt,
@@ -294,9 +303,9 @@ export async function PATCH(
       );
     }
 
-    // ==========================================
+    // ========================================================
     // UPDATE EXISTING PROMPT
-    // ==========================================
+    // ========================================================
 
     if (existingPrompt) {
       const {
@@ -305,9 +314,13 @@ export async function PATCH(
         .from("prompts")
         .update({
           content: prompt,
-          updated_at: new Date().toISOString(),
+          updated_at:
+            new Date().toISOString(),
         })
-        .eq("id", existingPrompt.id);
+        .eq(
+          "id",
+          existingPrompt.id
+        );
 
       if (updatePromptError) {
         console.error(
@@ -328,9 +341,9 @@ export async function PATCH(
       }
     }
 
-    // ==========================================
+    // ========================================================
     // CREATE PROMPT IF NONE EXISTS
-    // ==========================================
+    // ========================================================
 
     else {
       const {
@@ -361,9 +374,9 @@ export async function PATCH(
       }
     }
 
-    // ==========================================
+    // ========================================================
     // SUCCESS
-    // ==========================================
+    // ========================================================
 
     return NextResponse.json({
       success: true,
@@ -383,6 +396,479 @@ export async function PATCH(
           error instanceof Error
             ? error.message
             : "Unexpected server error.",
+      },
+      {
+        status: 500,
+      }
+    );
+  }
+}
+
+// ============================================================
+// DELETE AGENT
+// ============================================================
+
+export async function DELETE(
+  request: Request,
+  context: RouteContext
+) {
+  try {
+    const { id } = await context.params;
+
+    console.log(
+      "================================="
+    );
+
+    console.log(
+      "DELETE AGENT API CALLED"
+    );
+
+    console.log(
+      "Agent ID:",
+      id
+    );
+
+    console.log(
+      "================================="
+    );
+
+    const supabase =
+      await createClient();
+
+    // ========================================================
+    // AUTHENTICATION
+    // ========================================================
+
+    const {
+      data: { user },
+      error: authError,
+    } =
+      await supabase.auth.getUser();
+
+    if (
+      authError ||
+      !user
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "You must be logged in.",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    // ========================================================
+    // VERIFY OWNERSHIP
+    // ========================================================
+
+    const {
+      data: project,
+      error: projectError,
+    } =
+      await supabase
+        .from("projects")
+        .select(
+          "id, name"
+        )
+        .eq(
+          "id",
+          id
+        )
+        .eq(
+          "user_id",
+          user.id
+        )
+        .single();
+
+    if (
+      projectError ||
+      !project
+    ) {
+      console.error(
+        "Agent ownership check failed:",
+        projectError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Agent not found or you do not have permission to delete it.",
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    console.log(
+      "Deleting agent:",
+      project.name
+    );
+
+    // ========================================================
+    // DELETE MESSAGES
+    // ========================================================
+
+    const {
+      data: conversations,
+      error:
+        conversationsFetchError,
+    } =
+      await supabase
+        .from("conversations")
+        .select("id")
+        .eq(
+          "project_id",
+          id
+        );
+
+    if (
+      conversationsFetchError
+    ) {
+      console.error(
+        "Conversation lookup error:",
+        conversationsFetchError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Unable to prepare agent deletion: " +
+            conversationsFetchError.message,
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    const conversationIds =
+      (conversations ??
+        []).map(
+        (
+          conversation
+        ) =>
+          conversation.id
+      );
+
+    if (
+      conversationIds.length >
+      0
+    ) {
+      const {
+        error:
+          messagesDeleteError,
+      } =
+        await supabase
+          .from("messages")
+          .delete()
+          .in(
+            "conversation_id",
+            conversationIds
+          );
+
+      if (
+        messagesDeleteError
+      ) {
+        console.error(
+          "Messages deletion error:",
+          messagesDeleteError
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Unable to delete agent messages: " +
+              messagesDeleteError.message,
+          },
+          {
+            status: 500,
+          }
+        );
+      }
+    }
+
+    // ========================================================
+    // DELETE CONVERSATIONS
+    // ========================================================
+
+    const {
+      error:
+        conversationsDeleteError,
+    } =
+      await supabase
+        .from("conversations")
+        .delete()
+        .eq(
+          "project_id",
+          id
+        );
+
+    if (
+      conversationsDeleteError
+    ) {
+      console.error(
+        "Conversations deletion error:",
+        conversationsDeleteError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Unable to delete agent conversations: " +
+            conversationsDeleteError.message,
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    // ========================================================
+    // GET KNOWLEDGE DOCUMENTS
+    // ========================================================
+
+    const {
+      data: documents,
+      error:
+        documentsFetchError,
+    } =
+      await supabase
+        .from(
+          "knowledge_documents"
+        )
+        .select("id")
+        .eq(
+          "project_id",
+          id
+        );
+
+    if (
+      documentsFetchError
+    ) {
+      console.error(
+        "Knowledge document lookup error:",
+        documentsFetchError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Unable to prepare knowledge-base deletion: " +
+            documentsFetchError.message,
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    const documentIds =
+      (documents ??
+        []).map(
+        (
+          document
+        ) =>
+          document.id
+      );
+
+    // ========================================================
+    // DELETE KNOWLEDGE CHUNKS
+    // ========================================================
+
+    if (
+      documentIds.length >
+      0
+    ) {
+      const {
+        error:
+          chunksDeleteError,
+      } =
+        await supabase
+          .from(
+            "knowledge_chunks"
+          )
+          .delete()
+          .in(
+            "document_id",
+            documentIds
+          );
+
+      if (
+        chunksDeleteError
+      ) {
+        console.error(
+          "Knowledge chunks deletion error:",
+          chunksDeleteError
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Unable to delete knowledge chunks: " +
+              chunksDeleteError.message,
+          },
+          {
+            status: 500,
+          }
+        );
+      }
+    }
+
+    // ========================================================
+    // DELETE KNOWLEDGE DOCUMENTS
+    // ========================================================
+
+    const {
+      error:
+        documentsDeleteError,
+    } =
+      await supabase
+        .from(
+          "knowledge_documents"
+        )
+        .delete()
+        .eq(
+          "project_id",
+          id
+        );
+
+    if (
+      documentsDeleteError
+    ) {
+      console.error(
+        "Knowledge documents deletion error:",
+        documentsDeleteError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Unable to delete knowledge documents: " +
+            documentsDeleteError.message,
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    // ========================================================
+    // DELETE PROMPTS
+    // ========================================================
+
+    const {
+      error: promptsDeleteError,
+    } =
+      await supabase
+        .from("prompts")
+        .delete()
+        .eq(
+          "project_id",
+          id
+        );
+
+    if (
+      promptsDeleteError
+    ) {
+      console.error(
+        "Prompts deletion error:",
+        promptsDeleteError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Unable to delete agent instructions: " +
+            promptsDeleteError.message,
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    // ========================================================
+    // DELETE PROJECT / AGENT
+    // ========================================================
+
+    const {
+      error:
+        projectDeleteError,
+    } =
+      await supabase
+        .from("projects")
+        .delete()
+        .eq(
+          "id",
+          id
+        )
+        .eq(
+          "user_id",
+          user.id
+        );
+
+    if (
+      projectDeleteError
+    ) {
+      console.error(
+        "Project deletion error:",
+        projectDeleteError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Unable to delete agent: " +
+            projectDeleteError.message,
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    // ========================================================
+    // SUCCESS
+    // ========================================================
+
+    console.log(
+      "Agent deleted successfully:",
+      id
+    );
+
+    console.log(
+      "================================="
+    );
+
+    return NextResponse.json(
+      {
+        success: true,
+
+        message:
+          "Agent deleted successfully.",
+
+        agentId: id,
+      },
+      {
+        status: 200,
+      }
+    );
+  } catch (error) {
+    console.error(
+      "DELETE /api/agents/[id] error:",
+      error
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unexpected server error while deleting agent.",
       },
       {
         status: 500,

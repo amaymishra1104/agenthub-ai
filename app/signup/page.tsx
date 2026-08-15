@@ -1,32 +1,186 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import {
+  FormEvent,
+  useState,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
+function getSignupErrorMessage(
+  error: unknown
+): string {
+  const message =
+    error instanceof Error
+      ? error.message
+      : String(error);
+
+  const normalized =
+    message.toLowerCase();
+
+  // ========================================
+  // EMAIL RATE LIMIT
+  // ========================================
+
+  if (
+    normalized.includes(
+      "rate limit"
+    ) ||
+    normalized.includes(
+      "too many requests"
+    ) ||
+    normalized.includes(
+      "email rate limit"
+    ) ||
+    normalized.includes(
+      "over_email_send_rate_limit"
+    ) ||
+    normalized.includes(
+      "email rate limit exceeded"
+    )
+  ) {
+    return "Too many confirmation emails have been requested recently. Please wait a while before trying again.";
+  }
+
+  // ========================================
+  // EMAIL DELIVERY
+  // ========================================
+
+  if (
+    normalized.includes(
+      "error sending confirmation email"
+    ) ||
+    normalized.includes(
+      "confirmation email"
+    ) ||
+    normalized.includes(
+      "email provider"
+    )
+  ) {
+    return "Your account could not be confirmed because the confirmation email could not be sent. Please try again later.";
+  }
+
+  // ========================================
+  // EXISTING USER
+  // ========================================
+
+  if (
+    normalized.includes(
+      "user already registered"
+    ) ||
+    normalized.includes(
+      "already registered"
+    )
+  ) {
+    return "An account with this email already exists. Please log in instead.";
+  }
+
+  // ========================================
+  // INVALID EMAIL
+  // ========================================
+
+  if (
+    normalized.includes(
+      "invalid email"
+    )
+  ) {
+    return "Please enter a valid email address.";
+  }
+
+  // ========================================
+  // PASSWORD
+  // ========================================
+
+  if (
+    normalized.includes(
+      "password"
+    ) &&
+    normalized.includes(
+      "weak"
+    )
+  ) {
+    return "Please choose a stronger password.";
+  }
+
+  // ========================================
+  // FALLBACK
+  // ========================================
+
+  return "Unable to create your account. Please try again.";
+}
+
 export default function SignupPage() {
   const router = useRouter();
-  const supabase = createClient();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const supabase =
+    createClient();
 
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const [
+    email,
+    setEmail,
+  ] = useState("");
+
+  const [
+    password,
+    setPassword,
+  ] = useState("");
+
+  const [
+    confirmPassword,
+    setConfirmPassword,
+  ] = useState("");
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(false);
+
+  const [
+    errorMessage,
+    setErrorMessage,
+  ] = useState("");
+
+  const [
+    successMessage,
+    setSuccessMessage,
+  ] = useState("");
 
   async function handleSignup(
     event: FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
 
+    // ======================================
+    // RESET MESSAGES
+    // ======================================
+
     setErrorMessage("");
     setSuccessMessage("");
 
-    if (!email.trim() || !password || !confirmPassword) {
-      setErrorMessage("Please fill in all fields.");
+    // ======================================
+    // PREVENT DUPLICATE REQUESTS
+    // ======================================
+
+    if (loading) {
+      return;
+    }
+
+    // ======================================
+    // VALIDATION
+    // ======================================
+
+    const trimmedEmail =
+      email.trim();
+
+    if (
+      !trimmedEmail ||
+      !password ||
+      !confirmPassword
+    ) {
+      setErrorMessage(
+        "Please fill in all fields."
+      );
       return;
     }
 
@@ -37,47 +191,108 @@ export default function SignupPage() {
       return;
     }
 
-    if (password !== confirmPassword) {
-      setErrorMessage("Passwords do not match.");
+    if (
+      password !==
+      confirmPassword
+    ) {
+      setErrorMessage(
+        "Passwords do not match."
+      );
       return;
     }
+
+    // Basic email validation
+    const emailPattern =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (
+      !emailPattern.test(
+        trimmedEmail
+      )
+    ) {
+      setErrorMessage(
+        "Please enter a valid email address."
+      );
+      return;
+    }
+
+    // ======================================
+    // SIGNUP
+    // ======================================
 
     setLoading(true);
 
     try {
-      const origin = window.location.origin;
+      const origin =
+        window.location.origin;
 
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: {
-          emailRedirectTo: `${origin}/auth/confirm`,
-        },
-      });
+      const {
+        data,
+        error,
+      } =
+        await supabase.auth.signUp(
+          {
+            email:
+              trimmedEmail,
+            password,
+            options: {
+              emailRedirectTo:
+                `${origin}/auth/confirm`,
+            },
+          }
+        );
 
       if (error) {
-        throw new Error(error.message);
+        console.error(
+          "Supabase signup error:",
+          error
+        );
+
+        throw error;
       }
 
+      // ====================================
+      // SESSION CREATED
+      // ====================================
+
       if (data.session) {
-        router.push("/dashboard");
+        setSuccessMessage(
+          "Account created successfully. Redirecting..."
+        );
+
+        router.push(
+          "/dashboard"
+        );
+
         router.refresh();
+
         return;
       }
+
+      // ====================================
+      // EMAIL CONFIRMATION REQUIRED
+      // ====================================
 
       setSuccessMessage(
         "Account created successfully. Please check your email and click the confirmation link."
       );
-    } catch (error) {
-      console.error("Signup error:", error);
 
-      if (error instanceof Error) {
-        setErrorMessage(error.message);
-      } else {
-        setErrorMessage(
-          "Unable to create your account. Please try again."
-        );
-      }
+      // Clear passwords after successful
+      // account creation.
+      setPassword("");
+      setConfirmPassword("");
+
+    } catch (error) {
+      console.error(
+        "Signup error:",
+        error
+      );
+
+      setErrorMessage(
+        getSignupErrorMessage(
+          error
+        )
+      );
     } finally {
       setLoading(false);
     }
@@ -85,8 +300,15 @@ export default function SignupPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
+
       <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-8 shadow-sm">
+
+        {/* ==================================
+            HEADER
+        ================================== */}
+
         <div className="mb-8 text-center">
+
           <h1 className="text-3xl font-bold text-gray-900">
             Create Account
           </h1>
@@ -94,13 +316,24 @@ export default function SignupPage() {
           <p className="mt-2 text-sm text-gray-600">
             Create your AgentHub account.
           </p>
+
         </div>
 
+        {/* ==================================
+            FORM
+        ================================== */}
+
         <form
-          onSubmit={handleSignup}
+          onSubmit={
+            handleSignup
+          }
           className="space-y-5"
         >
+
+          {/* EMAIL */}
+
           <div>
+
             <label
               htmlFor="signup-email"
               className="block text-sm font-medium text-gray-900"
@@ -112,17 +345,25 @@ export default function SignupPage() {
               id="signup-email"
               type="email"
               value={email}
-              onChange={(event) =>
-                setEmail(event.target.value)
+              onChange={(
+                event
+              ) =>
+                setEmail(
+                  event.target.value
+                )
               }
               placeholder="you@example.com"
               autoComplete="email"
               disabled={loading}
               className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-500 focus:ring-1 focus:ring-gray-500 disabled:bg-gray-100"
             />
+
           </div>
 
+          {/* PASSWORD */}
+
           <div>
+
             <label
               htmlFor="signup-password"
               className="block text-sm font-medium text-gray-900"
@@ -134,17 +375,29 @@ export default function SignupPage() {
               id="signup-password"
               type="password"
               value={password}
-              onChange={(event) =>
-                setPassword(event.target.value)
+              onChange={(
+                event
+              ) =>
+                setPassword(
+                  event.target.value
+                )
               }
               placeholder="Create a password"
               autoComplete="new-password"
               disabled={loading}
               className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-500 focus:ring-1 focus:ring-gray-500 disabled:bg-gray-100"
             />
+
+            <p className="mt-1 text-xs text-gray-400">
+              Minimum 6 characters.
+            </p>
+
           </div>
 
+          {/* CONFIRM PASSWORD */}
+
           <div>
+
             <label
               htmlFor="confirm-password"
               className="block text-sm font-medium text-gray-900"
@@ -155,28 +408,47 @@ export default function SignupPage() {
             <input
               id="confirm-password"
               type="password"
-              value={confirmPassword}
-              onChange={(event) =>
-                setConfirmPassword(event.target.value)
+              value={
+                confirmPassword
+              }
+              onChange={(
+                event
+              ) =>
+                setConfirmPassword(
+                  event.target.value
+                )
               }
               placeholder="Confirm your password"
               autoComplete="new-password"
               disabled={loading}
               className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-500 focus:ring-1 focus:ring-gray-500 disabled:bg-gray-100"
             />
+
           </div>
 
+          {/* ERROR */}
+
           {errorMessage && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <div
+              role="alert"
+              className="rounded-md border border-red-200 bg-red-50 p-3 text-sm leading-5 text-red-700"
+            >
               {errorMessage}
             </div>
           )}
 
+          {/* SUCCESS */}
+
           {successMessage && (
-            <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+            <div
+              role="status"
+              className="rounded-md border border-green-200 bg-green-50 p-3 text-sm leading-5 text-green-700"
+            >
               {successMessage}
             </div>
           )}
+
+          {/* SUBMIT */}
 
           <button
             type="submit"
@@ -187,18 +459,28 @@ export default function SignupPage() {
               ? "Creating account..."
               : "Create Account"}
           </button>
+
         </form>
 
+        {/* ==================================
+            LOGIN LINK
+        ================================== */}
+
         <div className="mt-6 text-center text-sm text-gray-600">
+
           Already have an account?{" "}
+
           <Link
             href="/login"
             className="font-medium text-gray-900 underline underline-offset-4"
           >
             Login
           </Link>
+
         </div>
+
       </div>
+
     </main>
   );
 }
