@@ -8,6 +8,90 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
+type SupabaseLikeError = {
+  message?: string;
+  code?: string;
+};
+
+function getErrorDetails(
+  error: unknown
+): {
+  normalizedMessage: string;
+  code: string;
+} {
+  const maybeError =
+    error as SupabaseLikeError;
+
+  const message =
+    error instanceof Error
+      ? error.message
+      : String(error);
+
+  return {
+    normalizedMessage:
+      message.toLowerCase(),
+    code:
+      typeof maybeError?.code ===
+      "string"
+        ? maybeError.code.toLowerCase()
+        : "",
+  };
+}
+
+function shouldAttemptSignupFallback(
+  error: unknown
+): boolean {
+  const {
+    normalizedMessage,
+    code,
+  } = getErrorDetails(error);
+
+  return (
+    normalizedMessage.includes(
+      "error sending confirmation email"
+    ) ||
+    normalizedMessage.includes(
+      "confirmation email"
+    ) ||
+    normalizedMessage.includes(
+      "redirect"
+    ) ||
+    code === "redirect_url_not_allowed"
+  );
+}
+
+function isAlreadyRegisteredError(
+  error: unknown
+): boolean {
+  const {
+    normalizedMessage,
+  } = getErrorDetails(error);
+
+  return (
+    normalizedMessage.includes(
+      "user already registered"
+    ) ||
+    normalizedMessage.includes(
+      "already registered"
+    )
+  );
+}
+
+function resolveEmailRedirectTo(
+  origin: string
+): string {
+  const configuredRedirect =
+    process.env
+      .NEXT_PUBLIC_AUTH_REDIRECT_TO;
+
+  if (configuredRedirect) {
+    return configuredRedirect;
+  }
+
+  // Always use the Render URL in production or if requested
+  return `https://agenthub-ai-ujxo.onrender.com/auth/confirm`;
+}
+
 function getSignupErrorMessage(
   error: unknown
 ): string {
@@ -58,7 +142,7 @@ function getSignupErrorMessage(
       "email provider"
     )
   ) {
-    return "Your account could not be confirmed because the confirmation email could not be sent. Please try again later.";
+    return "We could not send a confirmation email right now. Please try again in a moment. If this keeps happening, ask support to check Supabase Auth email/SMTP settings.";
   }
 
   // ========================================
@@ -226,7 +310,12 @@ export default function SignupPage() {
       const origin =
         window.location.origin;
 
-      const {
+      const emailRedirectTo =
+        resolveEmailRedirectTo(
+          origin
+        );
+
+      let {
         data,
         error,
       } =
@@ -237,10 +326,72 @@ export default function SignupPage() {
             password,
             options: {
               emailRedirectTo:
-                `${origin}/auth/confirm`,
+                emailRedirectTo,
             },
           }
         );
+
+      if (
+        error &&
+        shouldAttemptSignupFallback(
+          error
+        )
+      ) {
+        console.warn(
+          "Primary signup failed. Retrying without custom redirect URL:",
+          error
+        );
+
+        const fallbackSignupResult =
+          await supabase.auth.signUp(
+            {
+              email:
+                trimmedEmail,
+              password,
+            }
+          );
+
+        data =
+          fallbackSignupResult.data;
+        error =
+          fallbackSignupResult.error;
+
+        if (
+          error &&
+          isAlreadyRegisteredError(
+            error
+          )
+        ) {
+          const {
+            error:
+              resendError,
+          } =
+            await supabase.auth.resend(
+              {
+                type:
+                  "signup",
+                email:
+                  trimmedEmail,
+              }
+            );
+
+          if (!resendError) {
+            setSuccessMessage(
+              "Account created. We just sent a fresh confirmation email. Please check your inbox."
+            );
+
+            setPassword("");
+            setConfirmPassword("");
+
+            return;
+          }
+
+          console.error(
+            "Resend confirmation error:",
+            resendError
+          );
+        }
+      }
 
       if (error) {
         console.error(
