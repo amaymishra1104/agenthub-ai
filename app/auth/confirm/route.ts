@@ -42,10 +42,10 @@ export async function GET(request: Request) {
     const { error } =
       await supabase.auth.exchangeCodeForSession(code);
 
+    const baseUrl = "https://agenthub-ai-ujxo.onrender.com";
+
     if (!error) {
-      return NextResponse.redirect(
-        new URL("/dashboard", request.url)
-      );
+      return NextResponse.redirect(`${baseUrl}/dashboard`);
     }
 
     console.error(
@@ -54,7 +54,6 @@ export async function GET(request: Request) {
     );
   }
 
-  return NextResponse.redirect(
-    new URL("/login?error=confirmation_failed", request.url)
-  );
+  const baseUrl = "https://agenthub-ai-ujxo.onrender.com";
+  return NextResponse.redirect(`${baseUrl}/login?error=confirmation_failed`);
 }
