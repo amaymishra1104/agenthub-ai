@@ -169,6 +169,7 @@ export default function LoginPage() {
 
     try {
       const {
+        data,
         error,
       } =
         await supabase.auth.signInWithPassword(
@@ -186,6 +187,11 @@ export default function LoginPage() {
         );
 
         throw error;
+      }
+
+      if (data.user && !data.user.email_confirmed_at) {
+        await supabase.auth.signOut();
+        throw new Error("Please verify your email address before logging in.");
       }
 
       setSuccessMessage(

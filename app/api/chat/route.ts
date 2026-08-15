@@ -468,9 +468,11 @@ export async function POST(
       );
     }
 
-    const systemPrompt =
+    let systemPrompt =
       prompt?.content?.trim() ||
       "You are a helpful AI assistant.";
+
+    systemPrompt += "\n\nCRITICAL INSTRUCTION: You must strictly rely on the provided context. Under NO circumstances should you hallucinate or make up names (e.g. CEO, team members, company details) or facts that are not explicitly provided. If you do not have the information in the context, clearly state that you do not know.";
 
     // ========================================================
     // 7. VERIFY CONVERSATION
