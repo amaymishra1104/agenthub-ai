@@ -335,22 +335,12 @@ sequenceDiagram
 
 A complete walkthrough of the application demonstrating authentication, chatbot functionality, core workflows, and technical architecture.
 
-[Watch Demo Video](#) *(Requires confirmation: Add demo link here)*
+[Watch Demo Video](#) https://drive.google.com/file/d/1lWsDSdxkhT4kZxHiD_Wr_QPGC1Q1qWLC/view?usp=drive_link
 
 ---
 
-## 17. Screenshots
 
----
-
-*(Placeholders for screenshots)*
-* `[Authentication Screen]`
-* `[Main Dashboard]`
-* `[Chatbot Interface]`
-
----
-
-## 18. Conclusion
+## 17. Conclusion
 
 ---
 
