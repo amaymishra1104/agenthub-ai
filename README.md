@@ -4,6 +4,15 @@ An AI-powered sales chatbot platform designed to help customers discover relevan
 
 ---
 
+## Links
+
+---
+
+* 🔗 **Live Demo**: [https://agenthub-ai-ujxo.onrender.com/](https://agenthub-ai-ujxo.onrender.com/)
+* 💻 **GitHub Repository**: [https://github.com/amaymishra1104/agenthub-ai](https://github.com/amaymishra1104/agenthub-ai)
+
+---
+
 ## 1. Overview
 
 ---
@@ -335,10 +344,9 @@ sequenceDiagram
 
 A complete walkthrough of the application demonstrating authentication, chatbot functionality, core workflows, and technical architecture.
 
-[Watch Demo Video](#) https://drive.google.com/file/d/1lWsDSdxkhT4kZxHiD_Wr_QPGC1Q1qWLC/view?usp=drive_link
+[Watch Demo Video](https://drive.google.com/file/d/1lWsDSdxkhT4kZxHiD_Wr_QPGC1Q1qWLC/view?usp=drive_link)
 
 ---
-
 
 ## 17. Conclusion
 
